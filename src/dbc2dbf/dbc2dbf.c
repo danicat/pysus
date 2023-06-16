@@ -65,28 +65,28 @@ int dbc2dbf(char* input_file, char* output_file) {
     input = fopen(input_file, "rb");
     if(input == NULL) {
         ret = errno;
-        fprintf(stderr, "error opening input file %s: %s", input_file, strerror(ret));
+        fprintf(stderr, "error opening input file %s: %s\n", input_file, strerror(ret));
         goto clean;
     }
 
     output = fopen(output_file, "wb");
     if(output == NULL) {
         ret = errno;
-        fprintf(stderr, "error opening output file %s: %s", output_file, strerror(ret));
+        fprintf(stderr, "error opening output file %s: %s\n", output_file, strerror(ret));
         goto clean;
     }
 
     /* Process file header - skip 8 bytes */
     if( fseek(input, 8, SEEK_SET) ) {
         ret = errno;
-        fprintf(stderr, "error seeking input file %s: %s", input_file, strerror(ret));
+        fprintf(stderr, "error seeking input file %s: %s\n", input_file, strerror(ret));
         goto clean;
     }
 
     /* Reads two bytes from the header = header size */
     ret = fread(rawHeader, 2, 1, input);
     if( ferror(input) ) {
-        fprintf(stderr, "error reading input file %s: %s", input_file, strerror(errno));
+        fprintf(stderr, "error reading input file %s: %s\n", input_file, strerror(errno));
         goto clean;
     }
 
@@ -98,19 +98,19 @@ int dbc2dbf(char* input_file, char* output_file) {
 
     buf = (unsigned char*) malloc(headerSize);
     if( buf == NULL ) {
-        fprintf(stderr, "not enough memory");
+        fprintf(stderr, "not enough memory\n");
         goto clean;
     }
 
     ret = fread(buf, 1, headerSize, input);
     if( ferror(input) ) {
-        fprintf(stderr, "error reading input file %s: %s", input_file, strerror(errno));
+        fprintf(stderr, "error reading input file %s: %s\n", input_file, strerror(errno));
         goto clean;
     }
 
     ret = fwrite(buf, 1, headerSize, output);
     if( ferror(output) ) {
-        fprintf(stderr, "error writing output file %s: %s", output_file, strerror(errno));
+        fprintf(stderr, "error writing output file %s: %s\n", output_file, strerror(errno));
         goto clean;
     }
 
@@ -125,19 +125,19 @@ int dbc2dbf(char* input_file, char* output_file) {
     switch (ret)
     {
     case 2:
-        fprintf(stderr, "ran out of input before completing decompression");
+        fprintf(stderr, "ran out of input before completing decompression\n");
         goto clean;
     case 1:
-        fprintf(stderr, "output error before completing decompression");
+        fprintf(stderr, "output error before completing decompression\n");
         goto clean;
     case -1:
-        fprintf(stderr, "literal flag not zero or one");
+        fprintf(stderr, "literal flag not zero or one\n");
         goto clean;
     case -2:
-        fprintf(stderr, "dictionary size not in 4..6");
+        fprintf(stderr, "dictionary size not in 4..6\n");
         goto clean;
     case -3:
-        fprintf(stderr, "distance is too far back");
+        fprintf(stderr, "distance is too far back\n");
         goto clean;
     default:
         break;
@@ -147,7 +147,7 @@ int dbc2dbf(char* input_file, char* output_file) {
     int n = 0;
     while (fgetc(input) != EOF) n++;
     if (n) {
-        fprintf(stderr, "there are %d leftover bytes from decompression", n);
+        fprintf(stderr, "there are %d leftover bytes from decompression\n", n);
         ret = -1;
         goto clean;
     }
