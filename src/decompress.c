@@ -1,5 +1,5 @@
-/* dbc2dbf.c
-   Copyright (C) 2016 Daniela Petruzalek
+/* decompress.c
+   Copyright (C) 2023 Daniela Petruzalek
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU Affero General Public License as published
@@ -24,6 +24,9 @@
     (https://github.com/eaglebh/blast-dbf).
 */
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -34,6 +37,46 @@
 #include "blast.h"
 
 #define CHUNK 4096
+
+static PyObject *decompress(PyObject *self, PyObject *args);
+
+static PyObject *DatasusError;
+
+static PyMethodDef DatasusMethods[] = {
+    {"decompress",  decompress, METH_VARARGS, "Decompress a DATASUS *.dbc file into a *.dbf"},
+    {NULL, NULL, 0, NULL}        /* Sentinel */
+};
+
+static struct PyModuleDef datasusmodule = {
+    PyModuleDef_HEAD_INIT,
+    "datasus",   // name of module
+    "tools for handling datasus (*.dbc) files", // module documentation, may be NULL
+    -1,          // size of per-interpreter state of the module,
+                 // or -1 if the module keeps state in global variables.
+    DatasusMethods
+};
+
+
+PyMODINIT_FUNC
+PyInit_datasus(void)
+{
+    PyObject *m;
+
+    m = PyModule_Create(&datasusmodule);
+    if (m == NULL)
+        return NULL;
+
+    DatasusError = PyErr_NewException("datasus.error", NULL, NULL);
+    Py_XINCREF(DatasusError);
+    if (PyModule_AddObject(m, "error", DatasusError) < 0) {
+        Py_XDECREF(DatasusError);
+        Py_CLEAR(DatasusError);
+        Py_DECREF(m);
+        return NULL;
+    }
+
+    return m;
+}
 
 /* Input file helper function */
 static unsigned inf(void *how, unsigned char **buf) {
@@ -50,43 +93,46 @@ static int outf(void *how, unsigned char *buf, unsigned len) {
 
 
 /*
-    dbc2dbf(char** input_file, char** output_file)
+    decompress:
     This function decompresses a given .dbc input file into the corresponding .dbf.
 
     Please provide fully qualified names, including file extension.
  */
-int dbc2dbf(char* input_file, char* output_file) {
+static PyObject *
+decompress(PyObject *self, PyObject *args) {
     FILE          *input = 0, *output = 0;
-    int           ret = 0;
     unsigned char rawHeader[2];
     uint16_t      headerSize = 0;
     unsigned char *buf = 0;
 
+    const char* input_file;
+    const char* output_file;
+
+    if (!PyArg_ParseTuple(args, "ss", &input_file, &output_file))
+        return NULL;
+
     input = fopen(input_file, "rb");
     if(input == NULL) {
-        ret = errno;
-        fprintf(stderr, "error opening input file %s: %s\n", input_file, strerror(ret));
+        PyErr_SetFromErrnoWithFilename(DatasusError, input_file);
         goto clean;
     }
 
     output = fopen(output_file, "wb");
     if(output == NULL) {
-        ret = errno;
-        fprintf(stderr, "error opening output file %s: %s\n", output_file, strerror(ret));
+        PyErr_SetFromErrnoWithFilename(DatasusError, output_file);
         goto clean;
     }
 
     /* Process file header - skip 8 bytes */
     if( fseek(input, 8, SEEK_SET) ) {
-        ret = errno;
-        fprintf(stderr, "error seeking input file %s: %s\n", input_file, strerror(ret));
+        PyErr_SetFromErrnoWithFilename(DatasusError, input_file);
         goto clean;
     }
 
     /* Reads two bytes from the header = header size */
-    ret = fread(rawHeader, 2, 1, input);
+    fread(rawHeader, 2, 1, input);
     if( ferror(input) ) {
-        fprintf(stderr, "error reading input file %s: %s\n", input_file, strerror(errno));
+        PyErr_SetFromErrnoWithFilename(DatasusError, input_file);
         goto clean;
     }
 
@@ -98,66 +144,46 @@ int dbc2dbf(char* input_file, char* output_file) {
 
     buf = (unsigned char*) malloc(headerSize);
     if( buf == NULL ) {
-        fprintf(stderr, "not enough memory\n");
+        PyErr_SetString(DatasusError, "not enough memory\n");
         goto clean;
     }
 
-    ret = fread(buf, 1, headerSize, input);
+    fread(buf, 1, headerSize, input);
     if( ferror(input) ) {
-        fprintf(stderr, "error reading input file %s: %s\n", input_file, strerror(errno));
+        PyErr_SetFromErrnoWithFilename(DatasusError, input_file);
         goto clean;
     }
 
-    ret = fwrite(buf, 1, headerSize, output);
+    fwrite(buf, 1, headerSize, output);
     if( ferror(output) ) {
-        fprintf(stderr, "error writing output file %s: %s\n", output_file, strerror(errno));
+        PyErr_SetFromErrnoWithFilename(DatasusError, output_file);
         goto clean;
     }
 
     /* Jump to the data (Skip CRC32) */
     if( fseek(input, headerSize + 4, SEEK_SET) ) {
-        ret = errno;
+        PyErr_SetFromErrnoWithFilename(DatasusError, input_file);
         goto clean;
     }
 
     /* decompress */
-    ret = blast(inf, input, outf, output);
-    switch (ret)
-    {
-    case 2:
-        fprintf(stderr, "ran out of input before completing decompression\n");
+    int ret = blast(inf, input, outf, output);
+    if(ret != 0) {
+        PyErr_SetString(DatasusError, "error decompressing file: make sure file is downloaded in binary mode and try again");
         goto clean;
-    case 1:
-        fprintf(stderr, "output error before completing decompression\n");
-        goto clean;
-    case -1:
-        fprintf(stderr, "literal flag not zero or one\n");
-        goto clean;
-    case -2:
-        fprintf(stderr, "dictionary size not in 4..6\n");
-        goto clean;
-    case -3:
-        fprintf(stderr, "distance is too far back\n");
-        goto clean;
-    default:
-        break;
     }
 
     /* see if there are any leftover bytes */
     int n = 0;
     while (fgetc(input) != EOF) n++;
     if (n) {
-        fprintf(stderr, "there are %d leftover bytes from decompression\n", n);
-        ret = -1;
-        goto clean;
+        PyErr_SetString(DatasusError, "there are leftover bytes after decompression: check file integrity");
     }
-
-    ret = 0;
 
 clean:
     if(input) fclose(input);
     if(output) fclose(output);
     if(buf) free(buf);
-    return ret;
+    Py_RETURN_NONE;
 }
 
