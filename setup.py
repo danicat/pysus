@@ -4,8 +4,9 @@ setup(
     ext_modules=[
         Extension(
             name="datasus",
-            sources=["src/decompress.c", "src/blast.c"],
+            sources=["datasus/decompress.c", "datasus/blast.c"],
             language="c",
         ),
-    ]
+    ],
+    scripts=['scripts/dbc2dbf.py'],
 )
