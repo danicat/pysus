@@ -16,7 +16,18 @@ $ make install
 
 Note: this requires `setuptools` to be installed on your system.
 
-Once it is installed you can either use it in `package` mode or `script` mode:
+### Reading a *.dbc file to a Pandas DataFrame
+
+```python
+from datasus import read_dbc
+import pandas as pd
+
+df = pd.DataFrame(read_dbc("my-file.dbc"))
+```
+
+### Decompressing *.dbc files to *.dbf 
+
+You can decompress a *.dbc file from python importing the `decompress` method:
 
 ```sh
 $ python3
@@ -25,10 +36,10 @@ $ python3
 >>>
 ```
 
-Or:
+Or you can run the helper script from the command line:
 
 ```sh
-$ dbc2dbf.py file.dbc file.dbf
+$ dbc2dbf.py input-file.dbc output-file.dbf
 ```
 
 ## Contact

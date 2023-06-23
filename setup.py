@@ -9,4 +9,8 @@ setup(
         ),
     ],
     scripts=['scripts/dbc2dbf.py'],
+    install_requires=[
+        "dbfread>=2.0.7",
+    ]
 )
+
